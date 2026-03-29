@@ -547,11 +547,20 @@ class ObjectCentricSSI(SSIPointmapNormalizer):
         mask_bool = mask_resized.reshape(-1) > 0.5
         mask_points = pointmap_flat[:, mask_bool]
 
-        if mask_points.isfinite().max() == 0:
+        if mask_points.numel() == 0:
             if self.raise_on_no_valid_points:
                 raise ValueError(f"No valid points found in mask")
             logger.warning(f"No valid points found in mask; setting scale to {self.scale_factor} and shift to 0")
             return torch.ones_like(pointmap_flat[:,0]) * self.scale_factor, torch.zeros_like(pointmap_flat[:,0])
+
+        valid_points = mask_points.isfinite().all(dim=0)
+        if not valid_points.any():
+            if self.raise_on_no_valid_points:
+                raise ValueError(f"No valid points found in mask")
+            logger.warning(f"No valid points found in mask; setting scale to {self.scale_factor} and shift to 0")
+            return torch.ones_like(pointmap_flat[:,0]) * self.scale_factor, torch.zeros_like(pointmap_flat[:,0])
+
+        mask_points = mask_points[:, valid_points]
 
         # Compute median for shift
         shift = mask_points.nanmedian(dim=-1).values
@@ -628,6 +637,8 @@ class ObjectApparentSizeSSI(SSIPointmapNormalizer):
     def _get_scale_and_shift(self, pointmap: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         pointmap_size = (pointmap.shape[1], pointmap.shape[2])
         pointmap_flat = pointmap.reshape(3, -1)
+        fallback_scale = torch.ones_like(pointmap_flat[:, 0]) * self.scale_factor
+        fallback_shift = torch.zeros_like(pointmap_flat[:, 0])
 
         if not self.use_scene_scale:
             # Get valid points from the mask
@@ -637,6 +648,17 @@ class ObjectApparentSizeSSI(SSIPointmapNormalizer):
             ).squeeze(0)
             mask_bool = mask_resized.reshape(-1) > 0.5
             pointmap_flat = pointmap_flat[:, mask_bool]
+
+        if pointmap_flat.numel() == 0:
+            logger.warning("No valid points found in mask; setting scale to 1 and shift to 0")
+            return fallback_scale, fallback_shift
+
+        finite_z = pointmap_flat[-1].isfinite()
+        if not finite_z.any():
+            logger.warning("No valid points found in mask; setting scale to 1 and shift to 0")
+            return fallback_scale, fallback_shift
+
+        pointmap_flat = pointmap_flat[:, finite_z]
 
         # Median z-distance
         median_z = pointmap_flat[-1, ...].nanmedian().unsqueeze(0)
@@ -725,6 +747,12 @@ class NormalizedDisparitySpaceSSI(SSIPointmapNormalizer):
 
         pointmap_flat = pointmap.reshape(3, -1)
         if self.use_scene_scale:
+            finite_z = pointmap_flat[-1].isfinite()
+            if not finite_z.any():
+                logger.warning("No valid scene points found; setting normalized disparity shift to 0")
+                shift = torch.zeros_like(pointmap_flat[:, 0])
+                scale = torch.ones_like(shift)
+                return scale, shift
             median_z = pointmap_flat[-1, ...].nanmedian().unsqueeze(0)
             shift = torch.zeros_like(median_z.expand(3))
             shift[-1, ...] = median_z[0] + self.log_disparity_shift
@@ -732,6 +760,18 @@ class NormalizedDisparitySpaceSSI(SSIPointmapNormalizer):
             # Get valid points from the mask (shift, x/z, y/z, log(z))
             mask_bool = mask_resized.reshape(-1) > 0.5
             pointmap_flat = pointmap_flat[:, mask_bool]
+            if pointmap_flat.numel() == 0:
+                logger.warning("No valid points found in mask; setting normalized disparity shift to 0")
+                shift = torch.zeros_like(pointmap.reshape(3, -1)[:, 0])
+                scale = torch.ones_like(shift)
+                return scale, shift
+            valid_points = pointmap_flat.isfinite().all(dim=0)
+            if not valid_points.any():
+                logger.warning("No valid points found in mask; setting normalized disparity shift to 0")
+                shift = torch.zeros_like(pointmap.reshape(3, -1)[:, 0])
+                scale = torch.ones_like(shift)
+                return scale, shift
+            pointmap_flat = pointmap_flat[:, valid_points]
             shift = pointmap_flat.nanmedian(dim=-1).values
 
         scale = torch.ones_like(shift)

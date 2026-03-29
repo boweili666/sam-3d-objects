@@ -167,6 +167,42 @@ def get_mask_renderer(Mask, min_size, Intrinsics, device):
     return mask, renderer
 
 
+def filter_alignment_outliers(
+    points,
+    nb_neighbors=20,
+    std_ratio=2.0,
+    min_points_after_filter=64,
+):
+    """
+    Remove isolated 3D outliers from manual-alignment target points.
+
+    Falls back to the original point set for tiny objects or if filtering
+    becomes too aggressive.
+    """
+    if points.shape[0] < max(nb_neighbors * 2, min_points_after_filter):
+        return points
+
+    try:
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points.detach().cpu().numpy())
+        _, inlier_indices = pcd.remove_statistical_outlier(
+            nb_neighbors=nb_neighbors,
+            std_ratio=std_ratio,
+        )
+    except Exception:
+        return points
+
+    if len(inlier_indices) < min_points_after_filter:
+        return points
+
+    inlier_indices = torch.as_tensor(
+        inlier_indices,
+        dtype=torch.long,
+        device=points.device,
+    )
+    return points[inlier_indices]
+
+
 def run_alignment(
     Point_Map,
     mask,
@@ -195,6 +231,7 @@ def run_alignment(
     # Remove inf values
     finite_mask = torch.isfinite(target_object_points).all(dim=1)
     target_object_points = target_object_points[finite_mask]
+    target_object_points = filter_alignment_outliers(target_object_points)
 
     # Apply coordinate alignment if needed
     if align_pm_coordinate:
@@ -660,6 +697,7 @@ def run_gs_alignment(
     # Remove inf values
     finite_mask = torch.isfinite(target_object_points).all(dim=1)
     target_object_points = target_object_points[finite_mask]
+    target_object_points = filter_alignment_outliers(target_object_points)
 
     # Apply coordinate alignment if needed
     if align_pm_coordinate:

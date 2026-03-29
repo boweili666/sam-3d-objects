@@ -25,7 +25,10 @@ from copy import deepcopy
 from kaolin.visualize import IpyTurntableVisualizer
 from kaolin.render.camera import Camera, CameraExtrinsics, PinholeIntrinsics
 import builtins
-from pytorch3d.transforms import quaternion_multiply, quaternion_invert
+from pytorch3d.transforms import (
+    quaternion_multiply,
+    quaternion_invert,
+)
 
 import sam3d_objects  # REMARK(Pierre) : do not remove this import
 from sam3d_objects.pipeline.inference_pipeline_pointmap import InferencePipelinePointMap
@@ -104,19 +107,28 @@ class Inference:
         mask: Optional[Union[None, Image.Image, np.ndarray]],
         seed: Optional[int] = None,
         pointmap=None,
+        with_layout_postprocess: bool = False,
+        estimate_plane: bool = False,
+        stage1_only: bool = False,
+        with_mesh_postprocess: bool = False,
+        with_texture_baking: bool = False,
+        use_vertex_color: bool = True,
+        decode_formats=None,
     ) -> dict:
         image = self.merge_mask_to_rgba(image, mask)
         return self._pipeline.run(
             image,
             None,
             seed,
-            stage1_only=False,
-            with_mesh_postprocess=False,
-            with_texture_baking=False,
-            with_layout_postprocess=False,
-            use_vertex_color=True,
+            stage1_only=stage1_only,
+            with_mesh_postprocess=with_mesh_postprocess,
+            with_texture_baking=with_texture_baking,
+            with_layout_postprocess=with_layout_postprocess,
+            use_vertex_color=use_vertex_color,
             stage1_inference_steps=None,
             pointmap=pointmap,
+            estimate_plane=estimate_plane,
+            decode_formats=decode_formats,
         )
 
 

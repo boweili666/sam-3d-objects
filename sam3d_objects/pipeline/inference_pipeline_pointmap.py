@@ -363,7 +363,7 @@ class InferencePipelinePointMap(InferencePipeline):
                 layout_input_dict["rgb_pointmap_unnorm"][0].permute(1, 2, 0),
                 intrinsics,
                 Enable_occlusion_check=False,
-                Enable_manual_alignment=False,
+                Enable_manual_alignment=True,
                 Enable_shape_ICP=False,
                 Enable_rendering_optimization=True,
                 min_size=518,
